@@ -16,8 +16,8 @@ const connectToDatabase = async (retries = 5, delay = 5000) => {
       await db.none(`
         CREATE TABLE IF NOT EXISTS todos (
           id SERIAL PRIMARY KEY,
-          title VARCHAR(255) NOT NULL,
-          description TEXT,
+          todo VARCHAR(255) NOT NULL,
+          user_id INT NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);

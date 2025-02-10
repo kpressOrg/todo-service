@@ -1,0 +1,18 @@
+services:
+  kpress-k8s-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    ports:
+      - "3030:3030"
+    depends_on:
+      - kpress-db
+
+  kpress-db:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydb
+    ports:
+      - "5432:5432"

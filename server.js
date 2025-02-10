@@ -41,7 +41,7 @@ connectToDatabase().then(db => {
   });
 
   // Create a new todo
-  app.post("/todos", (req, res) => {
+  app.post("/create", (req, res) => {
     const { title, description } = req.body;
     db.none("INSERT INTO todos(title, description) VALUES($1, $2)", [title, description])
       .then(() => {
@@ -53,7 +53,7 @@ connectToDatabase().then(db => {
   });
 
   // Read all todos
-  app.get("/todos", (req, res) => {
+  app.get("/all", (req, res) => {
     db.any("SELECT * FROM todos")
       .then((data) => {
         res.status(200).json(data);
@@ -64,7 +64,7 @@ connectToDatabase().then(db => {
   });
 
   // Update a todo
-  app.put("/todos/:id", (req, res) => {
+  app.put("/todo/:id", (req, res) => {
     const { id } = req.params;
     const { title, description } = req.body;
     db.none("UPDATE todos SET title=$1, description=$2 WHERE id=$3", [title, description, id])
@@ -77,11 +77,11 @@ connectToDatabase().then(db => {
   });
 
   // Delete a todo
-  app.delete("/todos/:id", (req, res) => {
+  app.delete("/todo/:id", (req, res) => {
     const { id } = req.params;
     db.none("DELETE FROM todos WHERE id=$1", [id])
       .then(() => {
-        res.status(200).json({ message: "Todo deleted successfully" });
+        res.status(204).json({ message: "Todo deleted successfully" });
       })
       .catch((error) => {
         res.status(500).json({ error: error.message });

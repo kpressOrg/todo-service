@@ -22,7 +22,7 @@ RUN rm -f .env
 RUN cp .env.prod .env
 
 # Expose the port on which the server will run
-EXPOSE 3030
+EXPOSE 3031
 
 # Start the backend server
 CMD ["pnpm", "start"]

@@ -1,6 +1,7 @@
 const express = require("express");
 const dotenv = require("dotenv");
 const pgp = require("pg-promise")();
+const amqp = require('amqplib/callback_api');
 const app = express();
 
 dotenv.config();
@@ -16,7 +17,8 @@ const connectToDatabase = async (retries = 5, delay = 5000) => {
       await db.none(`
         CREATE TABLE IF NOT EXISTS todos (
           id SERIAL PRIMARY KEY,
-          todo VARCHAR(255) NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
           user_id INT NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -33,6 +35,23 @@ const connectToDatabase = async (retries = 5, delay = 5000) => {
   throw new Error("Could not connect to the database after multiple attempts");
 };
 
+const connectToRabbitMQ = () => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("RabbitMQ connection timeout"));
+    }, 5000); // 5 seconds timeout
+
+    amqp.connect(process.env.RABBITMQ_URL, (error0, connection) => {
+      clearTimeout(timeout);
+      if (error0) {
+        reject(error0);
+      } else {
+        resolve(connection);
+      }
+    });
+  });
+};
+
 connectToDatabase().then(db => {
   app.use(express.json());
 
@@ -40,59 +59,87 @@ connectToDatabase().then(db => {
     res.json("todo service");
   });
 
-  // Create a new todo
-  app.post("/create", (req, res) => {
-    const { title, description } = req.body;
-    db.none("INSERT INTO todos(title, description) VALUES($1, $2)", [title, description])
-      .then(() => {
-        res.status(201).json({ message: "Todo created successfully" });
-      })
-      .catch((error) => {
-        res.status(500).json({ error: error.message });
-      });
-  });
+  connectToRabbitMQ()
+    .then((connection) => {
+      connection.createChannel((error1, channel) => {
+        if (error1) {
+          throw error1;
+        }
+        const queue = 'todo_created';
 
-  // Read all todos
-  app.get("/all", (req, res) => {
-    db.any("SELECT * FROM todos")
-      .then((data) => {
-        res.status(200).json(data);
-      })
-      .catch((error) => {
-        res.status(500).json({ error: error.message });
-      });
-  });
+        channel.assertQueue(queue, {
+          durable: false
+        });
 
-  // Update a todo
-  app.put("/todo/:id", (req, res) => {
-    const { id } = req.params;
-    const { title, description } = req.body;
-    db.none("UPDATE todos SET title=$1, description=$2 WHERE id=$3", [title, description, id])
-      .then(() => {
-        res.status(200).json({ message: "Todo updated successfully" });
-      })
-      .catch((error) => {
-        res.status(500).json({ error: error.message });
-      });
-  });
+        // Create a new todo
+        app.post("/create", (req, res) => {
+          const { title, description, user_id } = req.body;
+          if (!title || !description || !user_id) {
+            return res.status(400).json({ error: "Title, description and user_id are required" });
+          }
+          db.none("INSERT INTO todos(title, description, user_id) VALUES($1, $2, $3)", [title, description, user_id])
+            .then(() => {
+              res.status(201).json({ message: "Todo created successfully" });
 
-  // Delete a todo
-  app.delete("/todo/:id", (req, res) => {
-    const { id } = req.params;
-    db.none("DELETE FROM todos WHERE id=$1", [id])
-      .then(() => {
-        res.status(204).json({ message: "Todo deleted successfully" });
-      })
-      .catch((error) => {
-        res.status(500).json({ error: error.message });
-      });
-  });
+              // Send message to RabbitMQ
+              const todo = { title, description, user_id };
+              channel.sendToQueue(queue, Buffer.from(JSON.stringify(todo)));
+              console.log(" [x] Sent %s", todo);
+            })
+            .catch((error) => {
+              res.status(500).json({ error: error.message });
+            });
+        });
 
-  app.listen(process.env.PORT, () => {
-    console.log(
-      `Example app listening at ${process.env.APP_URL}:${process.env.PORT}`
-    );
-  });
+        // Read all todos
+        app.get("/all", (req, res) => {
+          db.any("SELECT * FROM todos")
+            .then((data) => {
+              res.status(200).json(data);
+            })
+            .catch((error) => {
+              res.status(500).json({ error: error.message });
+            });
+        });
+
+        // Update a todo
+        app.put("/todo/:id", (req, res) => {
+          const { id } = req.params;
+          const { title, description, user_id } = req.body;
+          if (!title || !description || !user_id) {
+            return res.status(400).json({ error: "Title, description and user_id are required" });
+          }
+          db.none("UPDATE todos SET title=$1, description=$2, user_id=$3 WHERE id=$4", [title, description, user_id, id])
+            .then(() => {
+              res.status(200).json({ message: "Todo updated successfully" });
+            })
+            .catch((error) => {
+              res.status(500).json({ error: error.message });
+            });
+        });
+
+        // Delete a todo
+        app.delete("/todo/:id", (req, res) => {
+          const { id } = req.params;
+          db.none("DELETE FROM todos WHERE id=$1", [id])
+            .then(() => {
+              res.status(204).json({ message: "Todo deleted successfully" });
+            })
+            .catch((error) => {
+              res.status(500).json({ error: error.message });
+            });
+        });
+
+        app.listen(process.env.PORT, () => {
+          console.log(
+            `Example app listening at ${process.env.APP_URL}:${process.env.PORT}`
+          );
+        });
+      });
+    })
+    .catch((error) => {
+      console.error("Failed to connect to RabbitMQ:", error);
+    });
 }).catch(error => {
   console.error("Failed to start the server:", error);
 });

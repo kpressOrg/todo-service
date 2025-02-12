@@ -6,7 +6,8 @@
   "license": "AGPL-3.0-only",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "jest"
   },
   "dependencies": {
     "amqplib": "^0.10.5",
@@ -15,6 +16,7 @@
     "pg-promise": "^11.10.2"
   },
   "devDependencies": {
+    "jest": "^29.7.0",
     "nodemon": "^3.1.9"
   }
 }
